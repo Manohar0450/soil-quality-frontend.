@@ -1,11 +1,9 @@
 import streamlit as st
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
 import requests
+import pandas as pd
+import matplotlib.pyplot as plt
 
-# ---------------- CONFIG ----------------
+# ---------------- Config ----------------
 API_BASE = "https://soil-quality-backend.vercel.app/api"
 
 st.set_page_config(
@@ -14,15 +12,11 @@ st.set_page_config(
     layout="wide"
 )
 
-# ---------------- UI ----------------
+# ---------------- Title ----------------
 st.title("🌱 Soil Quality Prediction System")
+st.caption("FastAPI (Vercel) + Streamlit + Machine Learning")
 
-st.markdown(
-    "Predict **Soil Quality (Low / Medium / High)** using a Machine Learning model "
-    "served via **FastAPI (Vercel)** and consumed by **Streamlit**."
-)
-
-# ---------------- SIDEBAR ----------------
+# ---------------- Sidebar Inputs ----------------
 st.sidebar.header("🔧 Input Soil Parameters")
 
 nitrogen = st.sidebar.slider("Nitrogen (ppm)", 0.0, 200.0, 50.0)
@@ -31,47 +25,42 @@ potassium = st.sidebar.slider("Potassium (ppm)", 0.0, 200.0, 30.0)
 ph = st.sidebar.slider("Soil pH", 0.0, 14.0, 6.8)
 moisture = st.sidebar.slider("Moisture (%)", 0.0, 100.0, 25.0)
 
-# ---------------- PREDICTION ----------------
+# ---------------- Prediction ----------------
 st.subheader("🔍 Predict Soil Quality")
 
 if st.button("Predict Soil Quality"):
-
     payload = {
-        "nitrogen": nitrogen,
-        "phosphorus": phosphorus,
-        "potassium": potassium,
-        "ph": ph,
-        "moisture": moisture
+        "Nitrogen": nitrogen,
+        "Phosphorus": phosphorus,
+        "Potassium": potassium,
+        "pH": ph,
+        "Moisture": moisture
     }
 
     try:
-        res = requests.post(f"{API_BASE}/predict", json=payload, timeout=10)
-        res.raise_for_status()
-        result = res.json()
+        res = requests.post(f"{API_BASE}/predict", json=payload).json()
 
-        st.success(f"✅ Predicted Soil Quality: **{result['soil_quality']}**")
-        st.info(f"Confidence: **{result['confidence']*100:.2f}%**")
+        st.success(f"🌱 Soil Quality: **{res['soil_quality']}**")
+        st.info(f"Confidence: **{res['confidence'] * 100:.2f}%**")
 
-        prob_df = pd.DataFrame(
-            result["probabilities"].items(),
-            columns=["Soil Quality", "Probability"]
-        ).set_index("Soil Quality")
-
+        prob_df = pd.DataFrame.from_dict(
+            res["probabilities"],
+            orient="index",
+            columns=["Probability"]
+        )
         st.subheader("📈 Prediction Probabilities")
         st.bar_chart(prob_df)
 
     except Exception as e:
-        st.error("❌ Backend prediction failed")
-        st.code(str(e))
+        st.error("Backend error")
+        st.write(e)
 
-# ---------------- METRICS ----------------
+# ---------------- Model Metrics ----------------
 st.markdown("---")
 st.subheader("📊 Model Performance Metrics")
 
 try:
-    metrics_res = requests.get(f"{API_BASE}/metrics", timeout=10)
-    metrics_res.raise_for_status()
-    metrics = metrics_res.json()
+    metrics = requests.get(f"{API_BASE}/metrics").json()
 
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Accuracy", metrics["accuracy"])
@@ -79,29 +68,27 @@ try:
     col3.metric("Recall", metrics["recall"])
     col4.metric("F1 Score", metrics["f1_score"])
 
+    # Confusion Matrix
     st.subheader("🧮 Confusion Matrix")
 
-    cm = np.array(metrics["confusion_matrix"])
+    cm = metrics["confusion_matrix"]
     labels = metrics["labels"]
 
-    fig, ax = plt.subplots(figsize=(4, 3))
-    sns.heatmap(
-        cm,
-        annot=True,
-        fmt="d",
-        cmap="Blues",
-        xticklabels=labels,
-        yticklabels=labels,
-        ax=ax
-    )
+    fig, ax = plt.subplots()
+    im = ax.imshow(cm)
+
+    ax.set_xticks(range(len(labels)))
+    ax.set_yticks(range(len(labels)))
+    ax.set_xticklabels(labels)
+    ax.set_yticklabels(labels)
+
+    for i in range(len(labels)):
+        for j in range(len(labels)):
+            ax.text(j, i, cm[i][j], ha="center", va="center")
 
     ax.set_xlabel("Predicted")
     ax.set_ylabel("Actual")
     st.pyplot(fig)
 
-except Exception:
-    st.warning("⚠️ Model metrics are temporarily unavailable (backend waking up).")
-
-# ---------------- FOOTER ----------------
-st.markdown("---")
-st.caption("🚀 Powered by FastAPI + Streamlit + Machine Learning")
+except:
+    st.warning("Metrics not available yet")
