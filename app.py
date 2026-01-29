@@ -1,10 +1,11 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import requests
 
-# ================= CONFIG =================
+# ---------------- CONFIG ----------------
 API_BASE = "https://soil-quality-backend.vercel.app/api"
 
 st.set_page_config(
@@ -13,14 +14,15 @@ st.set_page_config(
     layout="wide"
 )
 
-# ================= TITLE =================
+# ---------------- UI ----------------
 st.title("🌱 Soil Quality Prediction System")
+
 st.markdown(
     "Predict **Soil Quality (Low / Medium / High)** using a Machine Learning model "
     "served via **FastAPI (Vercel)** and consumed by **Streamlit**."
 )
 
-# ================= SIDEBAR INPUTS =================
+# ---------------- SIDEBAR ----------------
 st.sidebar.header("🔧 Input Soil Parameters")
 
 nitrogen = st.sidebar.slider("Nitrogen (ppm)", 0.0, 200.0, 50.0)
@@ -29,85 +31,77 @@ potassium = st.sidebar.slider("Potassium (ppm)", 0.0, 200.0, 30.0)
 ph = st.sidebar.slider("Soil pH", 0.0, 14.0, 6.8)
 moisture = st.sidebar.slider("Moisture (%)", 0.0, 100.0, 25.0)
 
-if st.sidebar.button("🔄 Reset"):
-    st.rerun()
-
-# ================= PREDICT =================
+# ---------------- PREDICTION ----------------
 st.subheader("🔍 Predict Soil Quality")
 
-payload = {
-    "nitrogen": nitrogen,
-    "phosphorus": phosphorus,
-    "potassium": potassium,
-    "ph": ph,
-    "moisture": moisture
-}
+if st.button("Predict Soil Quality"):
 
-if st.button("🔮 Predict Soil Quality"):
+    payload = {
+        "nitrogen": nitrogen,
+        "phosphorus": phosphorus,
+        "potassium": potassium,
+        "ph": ph,
+        "moisture": moisture
+    }
+
     try:
-        response = requests.post(f"{API_BASE}/predict", json=payload)
+        res = requests.post(f"{API_BASE}/predict", json=payload, timeout=10)
+        res.raise_for_status()
+        result = res.json()
 
-        if response.status_code == 200:
-            result = response.json()
+        st.success(f"✅ Predicted Soil Quality: **{result['soil_quality']}**")
+        st.info(f"Confidence: **{result['confidence']*100:.2f}%**")
 
-            st.success(f"✅ Predicted Soil Quality: **{result['soil_quality']}**")
-            st.info(f"Confidence: **{result['confidence']*100:.2f}%**")
+        prob_df = pd.DataFrame(
+            result["probabilities"].items(),
+            columns=["Soil Quality", "Probability"]
+        ).set_index("Soil Quality")
 
-            # -------- Probability Chart --------
-            st.subheader("📈 Prediction Probabilities")
-            prob_df = pd.DataFrame.from_dict(
-                result["probabilities"],
-                orient="index",
-                columns=["Probability"]
-            )
-            st.bar_chart(prob_df)
-
-        else:
-            st.error("❌ Backend returned an error")
-            st.json(response.json())
+        st.subheader("📈 Prediction Probabilities")
+        st.bar_chart(prob_df)
 
     except Exception as e:
-        st.error("❌ Backend API error")
-        st.exception(e)
+        st.error("❌ Backend prediction failed")
+        st.code(str(e))
 
-# ================= METRICS =================
-st.divider()
+# ---------------- METRICS ----------------
+st.markdown("---")
 st.subheader("📊 Model Performance Metrics")
 
 try:
-    metrics_res = requests.get(f"{API_BASE}/metrics")
+    metrics_res = requests.get(f"{API_BASE}/metrics", timeout=10)
+    metrics_res.raise_for_status()
+    metrics = metrics_res.json()
 
-    if metrics_res.status_code == 200:
-        metrics = metrics_res.json()
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Accuracy", metrics["accuracy"])
+    col2.metric("Precision", metrics["precision"])
+    col3.metric("Recall", metrics["recall"])
+    col4.metric("F1 Score", metrics["f1_score"])
 
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Accuracy", metrics["accuracy"])
-        col2.metric("Precision", metrics["precision"])
-        col3.metric("Recall", metrics["recall"])
-        col4.metric("F1 Score", metrics["f1_score"])
+    st.subheader("🧮 Confusion Matrix")
 
-        # -------- Confusion Matrix --------
-        st.subheader("🧮 Confusion Matrix")
+    cm = np.array(metrics["confusion_matrix"])
+    labels = metrics["labels"]
 
-        cm = pd.DataFrame(
-            metrics["confusion_matrix"],
-            index=metrics["labels"],
-            columns=metrics["labels"]
-        )
+    fig, ax = plt.subplots(figsize=(4, 3))
+    sns.heatmap(
+        cm,
+        annot=True,
+        fmt="d",
+        cmap="Blues",
+        xticklabels=labels,
+        yticklabels=labels,
+        ax=ax
+    )
 
-        fig, ax = plt.subplots(figsize=(4, 3))
-        sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=ax)
-        ax.set_xlabel("Predicted")
-        ax.set_ylabel("Actual")
-        st.pyplot(fig)
+    ax.set_xlabel("Predicted")
+    ax.set_ylabel("Actual")
+    st.pyplot(fig)
 
-    else:
-        st.error("❌ Failed to fetch metrics from backend")
+except Exception:
+    st.warning("⚠️ Model metrics are temporarily unavailable (backend waking up).")
 
-except Exception as e:
-    st.error("❌ Metrics API error")
-    st.exception(e)
-
-# ================= FOOTER =================
+# ---------------- FOOTER ----------------
 st.markdown("---")
 st.caption("🚀 Powered by FastAPI + Streamlit + Machine Learning")
